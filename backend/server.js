@@ -1,4 +1,6 @@
 require('dotenv').config();
+const uploadRoutes = require('./routes/upload');
+const reportRoutes = require('./routes/reports');
 
 const express = require('express');
 const helmet = require('helmet');
@@ -11,6 +13,8 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+app.use('/api/upload', uploadRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Health Check
 app.get('/health', (req, res) => {
