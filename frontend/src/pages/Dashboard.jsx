@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, FileText, AlertOctagon, CheckCircle2, Zap, Shield, Activity, Lock, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { uploadFile, getReports } from '../api'; // Note the '../' to go up one folder!
+import { uploadFile, getReports } from '../api';
+import { io } from "socket.io-client";
 
 // --- Glass Component ---
 const GlassCard = ({ children, className = "", delay = 0 }) => (
@@ -50,11 +51,35 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    // 1. Initial Fetch (Get old data)
     fetchReports();
-    const interval = setInterval(fetchReports, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
+    // 2. Connect to Neural Stream
+    const socket = io("http://localhost:5000", {
+      withCredentials: true
+    });
+
+    socket.on("connect", () => {
+      console.log("⚡ Connected to Live Stream");
+      setSystemStatus(true);
+    });
+
+    // 3. Listen for "Real-Time" Updates
+    socket.on("report_update", (event) => {
+      console.log("New Event:", event);
+      // When a new file arrives, re-fetch the list immediately
+      fetchReports(); 
+      // Optional: Add a toast notification here later
+    });
+
+    socket.on("disconnect", () => {
+      setSystemStatus(false);
+    });
+
+    // Cleanup when leaving the page
+    return () => socket.disconnect();
+  }, []);
+  
   const handleUpload = async () => {
     if (!selectedFile) return;
     setUploading(true);

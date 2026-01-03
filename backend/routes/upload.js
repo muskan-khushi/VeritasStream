@@ -1,14 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer'); // <--- Restored
+const multer = require('multer');
 const crypto = require('crypto');
 const Minio = require('minio');
 const QueueService = require('../services/queueService');
 const ChainOfCustody = require('../models/ChainOfCustody');
-const verifyUser = require('../middleware/auth'); // <--- Your Security Guard
+const verifyUser = require('../middleware/auth'); 
 
-// --- 1. Restore Multer Configuration ---
-// We use memory storage to stream directly to MinIO (no temp files on disk)
+// --- 1. Multer Configuration ---
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
@@ -34,7 +33,6 @@ minioClient.bucketExists(BUCKET_NAME, function(err, exists) {
 });
 
 // --- 3. The Secure Route ---
-// Added 'verifyUser' back to the chain
 router.post('/', verifyUser, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
@@ -77,12 +75,15 @@ router.post('/', verifyUser, upload.single('file'), async (req, res) => {
         };
         await QueueService.publish(taskPayload);
 
-        // Notify Real-Time Clients (WebSockets)
-        if (req.app.get('io')) {
-             req.app.get('io').emit('status_update', { 
-                 message: `New Evidence Received: ${file.originalname}`, 
-                 type: 'info' 
-             });
+        // --- 4. Notify Real-Time Clients (WebSockets) ---
+        // We use 'report_update' to match the listener in your new Dashboard.jsx
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('report_update', { 
+                type: 'UPLOAD', 
+                message: `New Evidence Ingested: ${file.originalname}`,
+                timestamp: new Date()
+            });
         }
 
         res.status(202).json({
