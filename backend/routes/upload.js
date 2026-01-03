@@ -1,95 +1,101 @@
 const express = require('express');
 const router = express.Router();
-const Busboy = require('busboy');
-const minioService = require('../services/minioService');
-const queueService = require('../services/queueService');
-const ChainOfCustody = require('../middleware/custody');
-const { HashPassThrough } = require('../utils/hash');
-const auth = require('../middleware/auth');
+const multer = require('multer'); // <--- Restored
+const crypto = require('crypto');
+const Minio = require('minio');
+const QueueService = require('../services/queueService');
+const ChainOfCustody = require('../models/ChainOfCustody');
+const verifyUser = require('../middleware/auth'); // <--- Your Security Guard
 
-// Initialize Custody Logger
-const custody = new ChainOfCustody(process.env.MONGO_URI);
+// --- 1. Restore Multer Configuration ---
+// We use memory storage to stream directly to MinIO (no temp files on disk)
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-router.post('/', auth, async (req, res) => {
-  const busboy = Busboy({ 
-    headers: req.headers,
-    limits: { fileSize: 20 * 1024 * 1024 * 1024 } // 20GB max
-  });
+// --- 2. MinIO Setup ---
+const minioClient = new Minio.Client({
+    endPoint: process.env.MINIO_ENDPOINT || 'localhost',
+    port: parseInt(process.env.MINIO_PORT) || 9000,
+    useSSL: false,
+    accessKey: process.env.MINIO_ACCESS_KEY,
+    secretKey: process.env.MINIO_SECRET_KEY
+});
 
-  let caseId = 'default-case';
-  const uploadedFiles = [];
+// Ensure Bucket Exists
+const BUCKET_NAME = 'forensics-evidence';
+minioClient.bucketExists(BUCKET_NAME, function(err, exists) {
+    if (err) return console.log('MinIO Error:', err);
+    if (!exists) {
+        minioClient.makeBucket(BUCKET_NAME, 'us-east-1', function(err) {
+            if (err) return console.log('Error creating bucket:', err);
+            console.log('Bucket created successfully in "us-east-1".');
+        });
+    }
+});
 
-  busboy.on('field', (name, value) => {
-    if (name === 'case_id') caseId = value;
-  });
-
-  busboy.on('file', async (fieldname, fileStream, fileInfo) => {
-    const { filename, mimeType } = fileInfo;
-    console.log(`Receiving file: ${filename}`);
-
+// --- 3. The Secure Route ---
+// Added 'verifyUser' back to the chain
+router.post('/', verifyUser, upload.single('file'), async (req, res) => {
     try {
-      // 1. Create Hash Stream
-      const hashStream = new HashPassThrough();
-      fileStream.pipe(hashStream);
-
-      // 2. Upload to MinIO
-      const timestamp = Date.now();
-      const objectName = `evidence/${caseId}/${timestamp}_${filename}`;
-      
-      const uploadResult = await minioService.uploadStream(
-        'evidence-bucket',
-        objectName,
-        hashStream,
-        {
-          'Content-Type': mimeType,
-          'X-Uploaded-By': req.user.email,
-          'X-Case-ID': caseId
+        if (!req.file) {
+            return res.status(400).send('No files were uploaded.');
         }
-      );
 
-      const fileHash = hashStream.getHash();
+        const file = req.file;
+        const caseId = req.body.case_id || 'DEFAULT-CASE';
+        
+        // Generate Unique Filename
+        const objectName = `${caseId}/${Date.now()}-${file.originalname}`;
 
-      // 3. Record in Chain of Custody
-      await custody.recordAccess(objectName, 'UPLOADED', req.user.id, {
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
-        hashAfter: fileHash
-      });
+        // Calculate Hash (SHA-256) for Integrity
+        const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
-      // 4. Determine Log Type
-      const logType = filename.endsWith('.evtx') ? 'windows' : 
-                      filename.includes('logcat') ? 'android' : 'unknown';
+        // Stream to MinIO
+        await minioClient.putObject(BUCKET_NAME, objectName, file.buffer);
 
-      // 5. Queue for AI Processing
-      await queueService.publish('log_processing_task', {
-        type: logType,
-        bucket: 'evidence-bucket',
-        objectName: objectName,
-        originalName: filename,
-        caseId: caseId,
-        fileHash: fileHash,
-        uploadedBy: req.user.id,
-        uploadedAt: new Date().toISOString()
-      });
+        // Create Chain of Custody Record
+        const custodyRecord = new ChainOfCustody({
+            case_id: caseId,
+            evidence_id: objectName,
+            user: req.user.username, // From JWT Token
+            action: 'UPLOAD',
+            hash: fileHash,
+            details: `File uploaded: ${file.originalname}`
+        });
+        await custodyRecord.save();
 
-      uploadedFiles.push({ filename, objectName, hash: fileHash, status: 'queued' });
-      console.log(`✅ File queued: ${filename}`);
+        // Send to RabbitMQ for AI Processing
+        const taskPayload = {
+            caseId: caseId,
+            objectName: objectName,
+            originalName: file.originalname,
+            bucket: BUCKET_NAME,
+            hash: fileHash,
+            type: 'log',
+            uploadedAt: new Date(),
+            user: req.user.username
+        };
+        await QueueService.publish(taskPayload);
+
+        // Notify Real-Time Clients (WebSockets)
+        if (req.app.get('io')) {
+             req.app.get('io').emit('status_update', { 
+                 message: `New Evidence Received: ${file.originalname}`, 
+                 type: 'info' 
+             });
+        }
+
+        res.status(202).json({
+            message: 'Files accepted for processing',
+            caseId: caseId,
+            file: objectName,
+            hash: fileHash
+        });
 
     } catch (error) {
-      console.error(`Upload error for ${filename}:`, error);
-      fileStream.resume(); // Drain stream
+        console.error("Upload Error:", error);
+        res.status(500).send(error.message);
     }
-  });
-
-  busboy.on('finish', () => {
-    res.status(202).json({
-      message: 'Files accepted for processing',
-      caseId: caseId,
-      files: uploadedFiles
-    });
-  });
-
-  req.pipe(busboy);
 });
 
 module.exports = router;

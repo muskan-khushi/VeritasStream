@@ -1,6 +1,8 @@
 require('dotenv').config();
 const uploadRoutes = require('./routes/upload');
 const reportRoutes = require('./routes/reports');
+const cookieParser = require('cookie-parser'); 
+const authRoutes = require('./routes/auth');
 
 const express = require('express');
 const helmet = require('helmet');
@@ -16,6 +18,8 @@ app.use(cors({
   credentials: true 
 }));
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
+app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/reports', reportRoutes);
 
