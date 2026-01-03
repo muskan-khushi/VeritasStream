@@ -1,47 +1,51 @@
 const amqp = require('amqplib');
 
 class QueueService {
-  constructor() {
-    this.connection = null;
-    this.channel = null;
-  }
-
-  async connect() {
-    if (this.connection) return;
-    try {
-      this.connection = await amqp.connect(process.env.RABBIT_URI);
-      this.channel = await this.connection.createChannel();
-      
-      // Durable queue ensures tasks aren't lost if RabbitMQ restarts
-      await this.channel.assertQueue('log_processing_task', { 
-        durable: true,
-        arguments: { 'x-max-priority': 10 }
-      });
-      console.log('🐰 Connected to RabbitMQ');
-      
-      this.connection.on('close', () => {
-        console.warn('RabbitMQ connection closed, reconnecting...');
+    constructor() {
         this.connection = null;
-        setTimeout(() => this.connect(), 5000);
-      });
-      
-    } catch (error) {
-      console.error('RabbitMQ Error:', error);
-      setTimeout(() => this.connect(), 5000);
+        this.channel = null;
+        this.queueName = 'forensics_tasks'; // Define the queue name here
     }
-  }
 
-  async publish(queue, message, priority = 5) {
-    if (!this.channel) await this.connect();
-    
-    const buffer = Buffer.from(JSON.stringify(message));
-    this.channel.sendToQueue(queue, buffer, { 
-      persistent: true,
-      priority: priority,
-      timestamp: Date.now()
-    });
-    console.log(`Task published to ${queue}`);
-  }
+    async connect() {
+        if (this.connection) return;
+
+        try {
+            // Connect to the RabbitMQ Server
+            this.connection = await amqp.connect(process.env.RABBIT_URI || 'amqp://guest:guest@localhost:5672');
+            this.channel = await this.connection.createChannel();
+            
+            // Assert the queue exists (Durable = survives restarts)
+            await this.channel.assertQueue(this.queueName, { durable: true });
+            
+            console.log('🐰 Connected to RabbitMQ');
+        } catch (error) {
+            console.error('RabbitMQ Connection Failed:', error);
+            // Retry logic could go here
+        }
+    }
+
+    async publish(data) {
+        try {
+            if (!this.channel) {
+                await this.connect();
+            }
+
+            // 1. Convert Object to JSON String
+            const messageBuffer = Buffer.from(JSON.stringify(data));
+
+            // 2. Send to Queue
+            this.channel.sendToQueue(this.queueName, messageBuffer, {
+                persistent: true // Save to disk
+            });
+
+            console.log(`📤 Task sent to ${this.queueName}`);
+        } catch (error) {
+            console.error('Queue Publish Error:', error);
+            throw error; // Re-throw so the upload route knows it failed
+        }
+    }
 }
 
+// Export a singleton instance
 module.exports = new QueueService();
