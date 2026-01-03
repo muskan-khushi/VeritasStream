@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  background-color: #050505; /* Deepest Void Black */
+  color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* The Glowing Background Layer */
+.nebula-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  background: radial-gradient(circle at 50% 50%, #0a0a0a 0%, #000000 100%);
+  overflow: hidden;
+}
+
+/* Floating Orbs of Light */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px); /* This creates the ethereal fog effect */
+  opacity: 0.4;
+  animation: float 15s infinite ease-in-out;
+}
+
+/* Custom Scrollbar to match the theme */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
