@@ -1,36 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose');
+const Report = require('../models/Report'); // Use the Model
 
-// Connect to the specific collection
-const Report = mongoose.connection.collection('analysis_reports');
-
-// GET /api/reports - Fetch all forensic reports
+// GET /api/reports
 router.get('/', async (req, res) => {
     try {
-        // Fetch last 20 reports, sorted by newest first
-        const reports = await Report.find({})
-            .sort({ analyzed_at: -1 })
-            .limit(20)
-            .toArray();
+        // Fetch reports using Mongoose
+        // Sort by uploaded_at so the newest file is always top
+        const reports = await Report.find()
+            .sort({ uploaded_at: -1 })
+            .limit(20);
             
         res.json(reports);
     } catch (err) {
         console.error('Error fetching reports:', err);
         res.status(500).json({ error: 'Failed to fetch reports' });
-    }
-});
-
-// GET /api/reports/:id - Fetch single detailed report
-router.get('/:id', async (req, res) => {
-    try {
-        const report = await Report.findOne({ 
-            _id: new mongoose.Types.ObjectId(req.params.id) 
-        });
-        if (!report) return res.status(404).json({ error: 'Report not found' });
-        res.json(report);
-    } catch (err) {
-        res.status(500).json({ error: 'Invalid ID format' });
     }
 });
 
