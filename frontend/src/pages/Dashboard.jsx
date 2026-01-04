@@ -47,6 +47,10 @@ const Dashboard = () => {
       setSystemStatus(true);
     } catch (err) {
       setSystemStatus(false);
+      if (err.response && err.response.status === 401) {
+        localStorage.removeItem('isAuthenticated');
+        navigate('/login');
+      }
     }
   };
 
@@ -101,6 +105,7 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await axios.post('http://localhost:5000/api/auth/logout');
+      localStorage.removeItem('isAuthenticated');
       navigate('/login');
     } catch (err) {
       console.error("Logout failed", err);

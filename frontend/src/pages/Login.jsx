@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Shield, ChevronRight, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api'; // <--- Now using your central API handler
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -15,18 +15,31 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    
+    console.log("🚀 Attempting Login..."); // Debug Log 1
 
     try {
-      // Connect to your real backend
-      await axios.post('http://localhost:5000/api/auth/login', 
-        { username, password },
-        { withCredentials: true } // CRITICAL: This allows cookies to be saved
-      );
+      // Use the central API (automatically handles withCredentials)
+      const response = await api.post('/auth/login', { username, password });
       
-      // Redirect to the Dashboard on success
+      console.log("✅ Login Success:", response.data); // Debug Log 2
+
+      // 🎟️ Create Ticket Stub
+      localStorage.setItem('isAuthenticated', 'true');
+      
+      // Redirect
       navigate('/dashboard');
+
     } catch (err) {
-      setError('Access Denied: Invalid Credentials');
+      console.error("❌ Login Failed:", err); // Debug Log 3
+      
+      if (!err.response) {
+        setError('Server Unreachable. Is the Backend running?');
+      } else if (err.response.status === 401) {
+        setError('Access Denied: Invalid Credentials');
+      } else {
+        setError('Login Failed: ' + (err.response.data.message || err.message));
+      }
     } finally {
       setLoading(false);
     }
@@ -35,7 +48,6 @@ const Login = () => {
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden text-slate-200 font-sans">
       
-      {/* Background Ambience */}
       <div className="fixed inset-0 bg-[#050505] z-0" />
       <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] rounded-full bg-indigo-600/10 blur-[120px] animate-pulse" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-cyan-600/10 blur-[120px]" />
@@ -46,7 +58,6 @@ const Login = () => {
         transition={{ duration: 0.8, ease: "easeOut" }}
         className="z-10 w-full max-w-md p-8 m-4 rounded-3xl backdrop-blur-2xl bg-white/5 border border-white/10 shadow-2xl relative"
       >
-        {/* Decorative Top Line */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50" />
 
         <div className="text-center mb-10">
