@@ -401,7 +401,26 @@ const Dashboard = () => {
                                </button>
 
                                {/* Hidden Audio Element */}
-                               <audio ref={audioRef} src={`http://localhost:5000/api/evidence/${selectedReport.audio_url}`} />
+                               {/* --- ROBUST AUDIO PLAYER --- */}
+                                {selectedReport.audio_url && (
+                                  <audio 
+                                    key={selectedReport.audio_url}  // <--- CRITICAL: Forces React to re-mount the player
+                                    ref={audioRef}
+                                    controls={false} // Hidden, controlled by the big button
+                                    preload="auto"
+                                    crossOrigin="anonymous"
+                                    onError={(e) => {
+                                      console.error("❌ Audio Load Failed:", e.currentTarget.error);
+                                      console.log("Attempted URL:", e.currentTarget.src);
+                                    }}
+                                  >
+                                    {/* Cache Buster (?t=...) forces browser to fetch a fresh version */}
+                                    <source 
+                                      src={`http://localhost:5000/api/evidence/${selectedReport.audio_url}?t=${Date.now()}`} 
+                                      type="audio/mpeg" 
+                                    />
+                                  </audio>
+                                )}
                             </div>
                           )}
 
