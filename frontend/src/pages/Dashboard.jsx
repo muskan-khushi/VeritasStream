@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, AlertOctagon, CheckCircle2, Zap, Shield, Activity, X, BarChart3, Fingerprint, Volume2, ChevronRight, Terminal, Play, AlertTriangle, Hash, Lock } from 'lucide-react';
+import { Upload, FileText, AlertOctagon, CheckCircle2, Zap, Shield, Activity, X, BarChart3, Fingerprint, Volume2, ChevronRight, Terminal, Play, AlertTriangle, Hash, Lock, Download, Trash2 } from 'lucide-react';
 import { io } from "socket.io-client";
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import ThreatMap from '../components/ThreatMap'; // <--- MAKE SURE THIS FILE EXISTS
 
 // --- API HELPERS ---
 const uploadFile = async (formData) => {
@@ -30,12 +33,11 @@ const GlassCard = ({ children, className = "" }) => (
   </motion.div>
 );
 
-// --- COMPONENT: LIVE FORENSIC TERMINAL (THE WOW FACTOR) ---
+// --- COMPONENT: LIVE FORENSIC TERMINAL ---
 const CyberTerminal = ({ filename }) => {
   const [logs, setLogs] = useState([]);
   
   useEffect(() => {
-    // Generate a random hash for visual effect
     const fakeHash = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join('');
     
     const steps = [
@@ -109,26 +111,37 @@ const Dashboard = () => {
   const fetchReports = async () => {
     try {
       const { data } = await getReports();
-      // Sort: Newest First
       const sorted = Array.isArray(data) ? data.sort((a, b) => new Date(b.upload_timestamp || b._id) - new Date(a.upload_timestamp || a._id)) : [];
       setReports(sorted);
     } catch (err) { console.error(err); }
   };
 
+  // --- CLEANUP FUNCTION (Fixed Scope) ---
+  const handleWipeSystem = async () => {
+    if (confirm("⚠️ SECURITY WARNING: ERASE ALL FORENSIC DATA? This cannot be undone.")) {
+      try {
+        await fetch('http://localhost:5000/api/reports', { method: 'DELETE' });
+        fetchReports(); // Now this works because it's inside the component
+      } catch(e) {
+        console.error("Wipe failed", e);
+      }
+    }
+  };
+
   useEffect(() => {
     fetchReports();
-    // 1. Socket Connection
-    const socket = io("http://localhost:5000", { transports: ['websocket'] });
+    const socket = io("http://localhost:5000", { 
+        reconnectionAttempts: 5,
+        timeout: 10000 
+    });
     socket.on("connect", () => setSystemStatus(true));
     socket.on("report_update", () => fetchReports());
     socket.on("disconnect", () => setSystemStatus(false));
 
-    // 2. Fallback Polling (Every 2s)
     const interval = setInterval(fetchReports, 2000);
     return () => { socket.disconnect(); clearInterval(interval); };
   }, []);
 
-  // Update modal live
   useEffect(() => {
     if (selectedReport) {
       const updated = reports.find(r => r._id === selectedReport._id);
@@ -140,7 +153,7 @@ const Dashboard = () => {
 
   const handleUpload = async () => {
     if (!selectedFile) return;
-    setUploading(true); // Triggers CyberTerminal
+    setUploading(true);
     
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -148,7 +161,6 @@ const Dashboard = () => {
 
     try {
       await uploadFile(formData);
-      // Wait 5 seconds to show off the terminal animation before resetting
       setTimeout(() => {
         setUploading(false);
         setSelectedFile(null);
@@ -158,6 +170,67 @@ const Dashboard = () => {
       alert("Upload Failed");
       setUploading(false);
     }
+  };
+
+  // --- PDF GENERATOR ---
+  const generatePDF = (report) => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFillColor(15, 23, 42); 
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setTextColor(6, 182, 212); 
+    doc.setFontSize(22);
+    doc.text("VERITAS INTELLIGENCE", 105, 20, null, null, "center");
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text("FORENSIC ANALYSIS REPORT // CLASSIFIED", 105, 30, null, null, "center");
+
+    // Metadata
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(12);
+    doc.text(`CASE ID: ${report.case_id}`, 14, 50);
+    doc.text(`DATE: ${new Date().toLocaleDateString()}`, 14, 58);
+    doc.text(`FILE: ${report.file_name}`, 14, 66);
+    
+    // Risk Score
+    if (report.risk_score > 50) {
+      doc.setTextColor(220, 38, 38);
+      doc.text(`THREAT LEVEL: CRITICAL (${report.risk_score}%)`, 120, 50);
+    } else {
+      doc.setTextColor(16, 185, 129);
+      doc.text(`THREAT LEVEL: LOW (${report.risk_score}%)`, 120, 50);
+    }
+
+    // Narrative
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.text("AI FORENSIC NARRATIVE", 14, 85);
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    const splitText = doc.splitTextToSize(report.ai_summary || "No narrative available.", 180);
+    doc.text(splitText, 14, 95);
+
+    // Table
+    autoTable(doc, {
+      startY: 130,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Attack Vector', report.attack_type || 'N/A'],
+        ['Confidence Score', `${report.confidence}%`],
+        ['Anomalies Detected', report.anomalies_found],
+        ['Action Required', report.recommended_action || 'None']
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text("Generated by VeritasStream AI Engine v3.0. Do not distribute without authorization.", 105, 290, null, null, "center");
+
+    doc.save(`Veritas_Report_${report.case_id}.pdf`);
   };
 
   return (
@@ -181,7 +254,17 @@ const Dashboard = () => {
               <Shield size={14} /> Forensic Intelligence Stream v3.0
             </p>
           </div>
-          <NeonBadge active={systemStatus} />
+          <div className="flex gap-4">
+             {/* CLEANUP BUTTON */}
+             <button 
+               onClick={handleWipeSystem}
+               className="p-2 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 transition-all"
+               title="PURGE SYSTEM"
+             >
+               <Trash2 size={16} />
+             </button>
+             <NeonBadge active={systemStatus} />
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -196,10 +279,8 @@ const Dashboard = () => {
                 </div>
 
                 {uploading ? (
-                  // 1. SHOW TERMINAL DURING UPLOAD
                   <CyberTerminal filename={selectedFile?.name} />
                 ) : (
-                  // 2. SHOW DROPZONE NORMALLY
                   <div className="relative group">
                     <input type="file" onChange={(e) => setSelectedFile(e.target.files[0])} className="hidden" id="file" />
                     <label 
@@ -232,7 +313,7 @@ const Dashboard = () => {
               >
                 {uploading ? (
                   <span className="flex items-center justify-center gap-2">
-                     <Zap size={14} className="animate-spin" /> ESTABLISHING SECURE UPLINK...
+                      <Zap size={14} className="animate-spin" /> ESTABLISHING SECURE UPLINK...
                   </span>
                 ) : "Initiate Analysis"}
               </button>
@@ -245,6 +326,11 @@ const Dashboard = () => {
               <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
                 <h2 className="text-xs font-bold text-white/50 uppercase tracking-widest">Live Case Feed</h2>
                 <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_emerald]" />
+              </div>
+              
+              {/* --- THREAT MAP VISUALIZER --- */}
+              <div className="h-32 w-full bg-slate-950/50 rounded-xl mx-6 mt-4 mb-2 border border-white/5 overflow-hidden w-[calc(100%-3rem)]">
+                 <ThreatMap active={uploading || reports.some(r => r.status === 'PROCESSING')} />
               </div>
 
               <div className="p-6 overflow-y-auto space-y-3 custom-scrollbar flex-1">
@@ -344,20 +430,20 @@ const Dashboard = () => {
                       </div>
 
                       <div className="p-6 rounded-2xl bg-white/5 border border-white/5 flex flex-col justify-center">
-                         <div className="flex items-center gap-2 text-cyan-400 mb-2">
+                          <div className="flex items-center gap-2 text-cyan-400 mb-2">
                             <AlertTriangle size={18} />
                             <span className="text-xs font-bold uppercase tracking-widest">Attack Vector</span>
-                         </div>
-                         <div className="text-xl font-bold text-white">{selectedReport.attack_type || "Unknown"}</div>
-                         <div className="text-sm text-slate-500 mt-1">Confidence: {selectedReport.confidence || 0}%</div>
+                          </div>
+                          <div className="text-xl font-bold text-white">{selectedReport.attack_type || "Unknown"}</div>
+                          <div className="text-sm text-slate-500 mt-1">Confidence: {selectedReport.confidence || 0}%</div>
                       </div>
 
                       <div className="p-6 rounded-2xl bg-white/5 border border-white/5 flex flex-col justify-center">
-                         <div className="flex items-center gap-2 text-amber-400 mb-2">
+                          <div className="flex items-center gap-2 text-amber-400 mb-2">
                             <Fingerprint size={18} />
                             <span className="text-xs font-bold uppercase tracking-widest">Anomalies</span>
-                         </div>
-                         <div className="text-4xl font-black text-white">{selectedReport.anomalies_found}</div>
+                          </div>
+                          <div className="text-4xl font-black text-white">{selectedReport.anomalies_found}</div>
                       </div>
                     </div>
 
@@ -382,7 +468,19 @@ const Dashboard = () => {
                        </div>
 
                        <div className="space-y-6">
-                          {/* EXECUTIVE BRIEFING BUTTON (WOW FACTOR) */}
+                          
+                          {/* REPORT ACTIONS (PDF EXPORT) */}
+                          <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-between">
+                             <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Case Files</div>
+                             <button 
+                               onClick={() => generatePDF(selectedReport)}
+                               className="flex items-center gap-2 px-4 py-2 bg-cyan-900/50 hover:bg-cyan-800/50 text-cyan-200 border border-cyan-700/30 rounded-lg transition-all text-xs font-bold uppercase tracking-wide hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+                             >
+                               <Download size={14} /> Export PDF Report
+                             </button>
+                          </div>
+
+                          {/* EXECUTIVE BRIEFING BUTTON */}
                           {selectedReport.audio_url && (
                             <div className="p-6 rounded-2xl bg-indigo-600/10 border border-indigo-500/30 flex flex-col items-center text-center">
                                <div className="mb-4">
@@ -400,21 +498,18 @@ const Dashboard = () => {
                                  <span className="font-bold tracking-wide">PLAY BRIEFING</span>
                                </button>
 
-                               {/* Hidden Audio Element */}
-                               {/* --- ROBUST AUDIO PLAYER --- */}
+                               {/* ROBUST AUDIO PLAYER */}
                                 {selectedReport.audio_url && (
                                   <audio 
-                                    key={selectedReport.audio_url}  // <--- CRITICAL: Forces React to re-mount the player
+                                    key={selectedReport.audio_url} 
                                     ref={audioRef}
-                                    controls={false} // Hidden, controlled by the big button
+                                    controls={false}
                                     preload="auto"
                                     crossOrigin="anonymous"
                                     onError={(e) => {
                                       console.error("❌ Audio Load Failed:", e.currentTarget.error);
-                                      console.log("Attempted URL:", e.currentTarget.src);
                                     }}
                                   >
-                                    {/* Cache Buster (?t=...) forces browser to fetch a fresh version */}
                                     <source 
                                       src={`http://localhost:5000/api/evidence/${selectedReport.audio_url}?t=${Date.now()}`} 
                                       type="audio/mpeg" 
