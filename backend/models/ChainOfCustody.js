@@ -3,18 +3,29 @@ const mongoose = require('mongoose');
 const ChainOfCustodySchema = new mongoose.Schema({
   case_id: { type: String, required: true, index: true },
   evidence_id: { type: String, required: true },
-  user: { type: String, required: true }, // The investigator's username
+  file_name: { type: String, required: true },
+  
+  // The "Fingerprint" - This proves the file hasn't changed
+  file_hash: { type: String, required: true }, 
+  
+  // Who did it? (Defaulting to Admin for the demo)
+  user: { type: String, default: 'Admin_Investigator' }, 
+  
+  // What happened?
   action: { 
     type: String, 
     required: true, 
-    enum: ['UPLOAD', 'ACCESS', 'ANALYSIS', 'DELETE'] 
+    default: 'EVIDENCE_ACQUISITION'
   },
-  hash: { type: String, required: true }, // SHA-256 Checksum
+  
+  // "Blockchain" Simulation
+  digital_signature: { type: String }, 
+  
   timestamp: { type: Date, default: Date.now },
   details: { type: String }
 });
 
-// Create a compound index for faster searching by case and time
+// Index for fast timeline generation
 ChainOfCustodySchema.index({ case_id: 1, timestamp: -1 });
 
 module.exports = mongoose.model('ChainOfCustody', ChainOfCustodySchema);
