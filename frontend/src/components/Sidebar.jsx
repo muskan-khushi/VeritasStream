@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Globe2, FolderLock, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, Globe2, FolderLock, LogOut, Shield, Eye } from 'lucide-react';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -41,6 +41,7 @@ const Sidebar = () => {
       <nav className="flex-1 space-y-2">
         <NavItem to="/dashboard" icon={LayoutDashboard} label="Live Dashboard" />
         <NavItem to="/intel" icon={Globe2} label="Global Intel" />
+        <NavItem to="/darkweb" icon={Eye} label="Dark Web Monitor" />
         <NavItem to="/archive" icon={FolderLock} label="Evidence Locker" />
       </nav>
 

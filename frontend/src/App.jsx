@@ -4,6 +4,8 @@ import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import GlobalIntel from './pages/GlobalIntel';
 import Sidebar from './components/Sidebar';
+import EvidenceLocker from './pages/EvidenceLocker'; 
+import DarkWeb from './pages/DarkWeb';
 
 // Layout wrapper for authenticated pages (Adds the Sidebar)
 const AppLayout = ({ children }) => {
@@ -34,27 +36,35 @@ const App = () => {
         <Route path="/" element={<Navigate to="/login" replace />} />
 
         {/* Protected Routes (Wrapped in Layout) */}
+        
+        {/* 1. DASHBOARD */}
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Dashboard />
           </ProtectedRoute>
         } />
         
+        {/* 2. GLOBAL INTEL (Map) */}
         <Route path="/intel" element={
           <ProtectedRoute>
             <GlobalIntel />
           </ProtectedRoute>
         } />
 
-        {/* Placeholder for Archive */}
-        <Route path="/archive" element={
+        {/* 3. DARK WEB MONITOR */}
+        <Route path="/darkweb" element={
           <ProtectedRoute>
-            <div className="p-10 text-center text-slate-500 mt-20 flex flex-col items-center justify-center h-full">
-               <h2 className="text-2xl font-bold text-white mb-2">Evidence Locker</h2>
-               <p className="font-mono text-xs uppercase tracking-widest text-cyan-500">Access Restricted // Level 5 Clearance Required</p>
-            </div>
+            <DarkWeb />
           </ProtectedRoute>
         } />
+
+        {/* 4. EVIDENCE LOCKER (Real Database) */}
+        <Route path="/archive" element={
+          <ProtectedRoute>
+            <EvidenceLocker />
+          </ProtectedRoute>
+        } />
+
       </Routes>
     </BrowserRouter>
   );
