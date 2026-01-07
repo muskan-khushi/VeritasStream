@@ -11,6 +11,7 @@ const { Server } = require("socket.io");    // Import Socket.io
 const uploadRoutes = require('./routes/upload');
 const reportRoutes = require('./routes/reports');
 const authRoutes = require('./routes/auth');
+const evidenceRoutes = require('./routes/evidence'); 
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -55,6 +56,7 @@ app.use(cookieParser());
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/evidence', evidenceRoutes); // <--- ADD THIS
 
 // Health Check
 app.get('/health', (req, res) => {
