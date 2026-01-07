@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Minio = require('minio');
 
-// Re-initialize MinIO (same config as upload.js)
+// Re-initialize MinIO
 const minioClient = new Minio.Client({
     endPoint: process.env.MINIO_ENDPOINT || 'localhost',
     port: parseInt(process.env.MINIO_PORT) || 9000,
@@ -11,31 +11,40 @@ const minioClient = new Minio.Client({
     secretKey: process.env.MINIO_SECRET_KEY
 });
 
-// Route: /api/evidence/audio/filename.mp3
-// The (*) captures the entire path (e.g., "audio/CS-1234_alert.mp3")
+const BUCKET_NAME = 'forensics-evidence';
+
+// Route: /api/evidence/*
 router.get('/*', async (req, res) => {
     try {
-        const objectName = req.params[0]; // Gets the captured path
-        const bucketName = 'forensics-evidence';
+        // 1. Capture the full path (e.g. "audio/CS-1234_alert.mp3")
+        const objectName = req.params[0]; 
 
-        console.log(`🎧 Streaming Audio: ${objectName}`);
+        console.log(`🎧 Streaming Request: ${objectName}`);
 
-        // Check if file exists
+        // 2. Get File Stats FIRST (Critical for Audio Player!)
+        let stat;
         try {
-            await minioClient.statObject(bucketName, objectName);
+            stat = await minioClient.statObject(BUCKET_NAME, objectName);
         } catch (err) {
-            console.error("File not found:", objectName);
+            console.error(`❌ File not found in MinIO: ${objectName}`);
             return res.status(404).send("Audio file not found");
         }
 
-        // Stream it!
-        const dataStream = await minioClient.getObject(bucketName, objectName);
+        // 3. Set Headers (This fixes the 0:00 bug)
         res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Content-Length', stat.size); // <--- The Missing Key!
+        res.setHeader('Accept-Ranges', 'bytes');    // Allows seeking/scrubbing
+
+        // 4. Stream the file
+        const dataStream = await minioClient.getObject(BUCKET_NAME, objectName);
         dataStream.pipe(res);
 
     } catch (err) {
-        console.error("Stream Error:", err);
-        res.status(500).send("Error streaming evidence");
+        console.error("❌ Stream Error:", err);
+        // Only send error if headers haven't been sent yet
+        if (!res.headersSent) {
+            res.status(500).send("Error streaming evidence");
+        }
     }
 });
 
