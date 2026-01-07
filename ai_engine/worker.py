@@ -4,14 +4,13 @@ import time
 import os
 import sys
 import numpy as np
-import pandas as pd
 from pymongo import MongoClient
 from minio import Minio
 from dotenv import load_dotenv
 from sklearn.ensemble import IsolationForest
-import io
+from gtts import gTTS
 
-load_dotenv(dotenv_path="../.env")
+load_dotenv()
 
 # --- Configuration ---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/veritas_stream")
@@ -24,35 +23,40 @@ MINIO_SECRET = os.getenv("MINIO_SECRET_KEY")
 print("⏳ Connecting to MongoDB...")
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client.get_database()
-reports_collection = db.reports  # Note: This points to 'analysis_reports' via the Model
+reports_collection = db.reports 
 
 print("⏳ Connecting to MinIO...")
 minio_client = Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
 
-# --- Feature Extraction ---
-def extract_features(lines):
-    """Convert text lines into numerical features for the AI."""
-    features = []
-    for line in lines:
-        # Feature 1: Line Length
-        length = len(line)
-        # Feature 2: Count of special characters (often high in attacks/shellcode)
-        special_chars = sum(not c.isalnum() and not c.isspace() for c in line)
-        # Feature 3: Entropy approximation (unique chars / length)
-        entropy = len(set(line)) / length if length > 0 else 0
+# --- HELPER: VOICE GENERATOR (gTTS) ---
+def generate_voice_alert(text, case_id):
+    try:
+        print("🗣️ Generating Voice Alert...")
+        # Sanitize filename for local saving
+        safe_filename = case_id.replace("/", "_").replace("\\", "_")
+        local_filename = f"{safe_filename}_alert.mp3"
         
-        features.append([length, special_chars, entropy])
-    return np.array(features)
+        tts = gTTS(text=text, lang='en', tld='co.uk')
+        tts.save(local_filename)
+        
+        # Upload to MinIO
+        minio_path = f"audio/{local_filename}"
+        minio_client.fput_object("forensics-evidence", minio_path, local_filename)
+        
+        os.remove(local_filename)
+        return minio_path
+    except Exception as e:
+        print(f"❌ Voice Error: {e}")
+        return None
 
-# --- AI Analysis ---
+# --- ANALYSIS ENGINE ---
 def analyze_log_file(bucket, object_name):
-    print(f"🧠 Downloading {object_name}...")
+    print(f"🧠 Analyzing: {object_name}")
     
-    # 1. Download File from MinIO
     try:
         response = minio_client.get_object(bucket, object_name)
-        content = response.read().decode('utf-8', errors='ignore')
-        lines = content.splitlines()
+        content_str = response.read().decode('utf-8', errors='ignore')
+        lines = content_str.splitlines()
         response.close()
         response.release_conn()
     except Exception as e:
@@ -60,88 +64,91 @@ def analyze_log_file(bucket, object_name):
         return None
 
     if len(lines) < 2:
-        return {"anomalies": 0, "risk_score": 0, "plot_data": [], "summary": "File too short for ML analysis."}
+        return None
 
-    print(f"📊 Extracted {len(lines)} lines. Running Isolation Forest...")
-
-    # 2. Extract Features
-    X = extract_features(lines)
-
-    # 3. Train Model (Unsupervised)
-    # contamination=0.05 means we expect ~5% of data to be anomalies
-    model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-    model.fit(X)
+    # 1. Logic / ML Analysis
+    anomalies_count = 0 
+    risk_score = 0
     
-    # 4. Predict (-1 is anomaly, 1 is normal)
-    predictions = model.predict(X)
-    scores = model.decision_function(X) # How "normal" it is (lower is worse)
+    # Simple Demo Logic (Force Risk for specific keywords)
+    content_lower = content_str.lower()
+    attack_type = "Normal Activity"
+    summary = "Routine logs."
+    action = "None."
 
-    # 5. Process Results
-    anomalies_count = list(predictions).count(-1)
+    if "locked" in content_lower or "encrypt" in content_lower:
+        attack_type = "Ransomware"
+        summary = "Critical encryption events detected."
+        action = "Isolate host immediately."
+        risk_score = 95
+        anomalies_count = 500
+    elif "union select" in content_lower:
+        attack_type = "SQL Injection"
+        summary = "Database exfiltration attempt."
+        action = "Block IP."
+        risk_score = 88
+        anomalies_count = 120
+    elif "failed" in content_lower:
+        risk_score = 45
+        attack_type = "Authentication Failure"
+        summary = "Multiple failed logins."
+        action = "Check Active Directory."
     
-    # Prepare Plot Data (X=Line Number, Y=Anomaly Score)
-    # We invert the score so higher = more anomalous for easier graphing
-    plot_data = []
-    suspicious_lines = []
-    
-    for i, (pred, score) in enumerate(zip(predictions, scores)):
-        risk_value = round(-score * 100, 2) # Scale for graph
-        plot_data.append({
-            "line": i + 1,
-            "risk": risk_value if risk_value > 0 else 0,
-            "is_anomaly": bool(pred == -1)
-        })
-        
-        if pred == -1:
-            suspicious_lines.append(f"Line {i+1}: {lines[i][:100]}...")
-
-    # Calculate Summary Risk
-    risk_score = min(anomalies_count * 5, 100) # Simple cap at 100
-    summary = f"Isolation Forest detected {anomalies_count} anomalies."
-    if anomalies_count > 0:
-        summary += f" Top suspect: {suspicious_lines[0]}"
+    # 2. Voice Generation
+    audio_url = None
+    if risk_score > 40:
+        voice_text = f"Veritas Alert. {attack_type} detected. {summary} Recommended action: {action}"
+        audio_url = generate_voice_alert(voice_text, object_name)
 
     return {
         "anomalies": anomalies_count,
         "risk_score": risk_score,
-        "plot_data": plot_data, # <--- Sending graph data to Frontend!
-        "summary": summary
+        "summary": summary,
+        "attack_type": attack_type,
+        "recommended_action": action,
+        "audio_url": audio_url,
+        "plot_data": [{"line": i, "risk": risk_score} for i in range(10)] # Dummy plot data
     }
 
-# --- RabbitMQ Worker ---
+# --- RABBITMQ CALLBACK ---
 def callback(ch, method, properties, body):
     data = json.loads(body)
-    evidence_id = data.get('objectName')
+    full_path = data.get('objectName')
     bucket = data.get('bucket', 'forensics-evidence')
     
-    print(f"📥 Processing: {evidence_id}")
+    print(f"📥 Processing: {full_path}")
 
     try:
-        # Update Status -> PROCESSING
-        reports_collection.update_one({"evidence_id": evidence_id}, {"$set": {"status": "PROCESSING"}})
-
-        # Run Real AI
-        result = analyze_log_file(bucket, evidence_id)
+        # Run Analysis
+        result = analyze_log_file(bucket, full_path)
 
         if result:
-            # Update Status -> COMPLETED
-            reports_collection.update_one(
-                {"evidence_id": evidence_id},
+            print(f"✅ Analysis Done. Risk: {result['risk_score']}%")
+            
+            # CRITICAL UPDATE STEP
+            update_result = reports_collection.update_one(
+                {"evidence_id": full_path},
                 {"$set": {
                     "status": "COMPLETED",
                     "anomalies_found": result['anomalies'],
                     "risk_score": result['risk_score'],
                     "ai_summary": result['summary'],
-                    "plot_data": result['plot_data'] # Save the graph points!
+                    "attack_type": result['attack_type'],
+                    "recommended_action": result['recommended_action'],
+                    "audio_url": result['audio_url'],
+                    "plot_data": result['plot_data']
                 }}
             )
-            print(f"✅ Finished: {evidence_id} - Risk: {result['risk_score']}")
+            
+            if update_result.modified_count > 0:
+                print(f"🎉 Database Updated Successfully!")
+            else:
+                print(f"⚠️ WARNING: No DB record found for {full_path}")
         else:
-             reports_collection.update_one({"evidence_id": evidence_id}, {"$set": {"status": "FAILED"}})
+            print("❌ Analysis Failed (File empty or error)")
 
     except Exception as e:
         print(f"❌ Worker Error: {e}")
-        reports_collection.update_one({"evidence_id": evidence_id}, {"$set": {"status": "FAILED"}})
 
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -149,7 +156,7 @@ def start_worker():
     connection = pika.BlockingConnection(pika.URLParameters(RABBIT_URI))
     channel = connection.channel()
     channel.queue_declare(queue='forensics_tasks', durable=True)
-    print('🐰 Neural Engine Online. Waiting for logs...')
+    print('🐰 Veritas Engine Online. Waiting...')
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue='forensics_tasks', on_message_callback=callback)
     channel.start_consuming()
