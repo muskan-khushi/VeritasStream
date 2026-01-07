@@ -18,4 +18,14 @@ router.get('/', async (req, res) => {
     }
 });
 
+// NUKE PROTOCOL: Delete all reports (For Demo Reset)
+router.delete('/', async (req, res) => {
+    try {
+        await Report.deleteMany({});
+        res.json({ message: 'SYSTEM PURGED. ALL EVIDENCE DESTROYED.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
