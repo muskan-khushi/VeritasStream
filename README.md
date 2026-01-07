@@ -160,6 +160,82 @@ graph LR
 - 🔍 **Drill-Down Analysis:** Click any spike → see exact log lines
 - 📱 **Responsive Design:** Works on mobile, tablet, desktop
 
+-
+
+---
+
+## 🏗️ Architecture & Interface Design
+
+VeritasStream is engineered as a Single Page Application (SPA) with a multi-module layout, utilizing **React Router v6** for seamless navigation and **Framer Motion** for cinema-grade interface transitions.
+
+### 1. 🔐 Secure Uplink (Authentication Module)
+
+**Role:** Identity Verification & Session Initialization.
+
+The entry point to the system features a high-fidelity "Biometric Uplink" simulation. It moves beyond standard login forms to establish a secure, immersive atmosphere immediately.
+
+* **Biometric Simulation:** Visual feedback loops using framer-motion to simulate identity scanning and handshake protocols.
+* **Secure Storage:** Upon successful authentication, a session token is encrypted and stored in local storage for persistent access control.
+* **Error Handling:** Adaptive error messaging for server disconnects or invalid credentials with visual alerts.
+
+`stack: Framer Motion, Lucide React, LocalStorage API`
+
+---
+
+### 2. ⚡ Command Dashboard (Neural Engine Hub)
+
+**Role:** Real-Time Evidence Ingestion & AI Analysis.
+
+The core operational view where forensic data is ingested and analyzed. This dashboard connects directly to the backend **WebSocket** stream to provide live updates without page refreshes.
+
+* **Live Case Feed:** A dynamic, auto-updating list of case files powered by Socket.io, showing status changes (Processing -> Analyzed) in real-time.
+* **Cyber Terminal:** A visual component that reveals the backend's "thought process," displaying raw log parsing and hash calculations to the user.
+* **AI Executive Briefing:** Integrated **Text-to-Speech (TTS)** engine that converts complex forensic reports into a concise 15-second audio briefing for non-technical stakeholders.
+* **Instant Reporting:** Client-side PDF generation using `jspdf` that renders a classified-style forensic report on the fly.
+
+`stack: Socket.io-client, Recharts, HTML5 Audio, jsPDF`
+
+---
+
+### 3. 🌍 Global Threat Intelligence (Geospatial Telemetry)
+
+**Role:** Macro-Level Attack Visualization.
+
+A full-screen data visualization module designed to contextualize individual threats within the global landscape.
+
+* **Active Vector Mapping:** A custom SVG-based map component that visualizes attack origins and server node connections.
+* **Pulse Telemetry:** Visual indicators for network load and active threat counts, updating in real-time to simulate live monitoring.
+* **Dark Mode UI:** Optimized contrast ratios for low-light "War Room" environments.
+
+`stack: SVG Animations, Framer Motion, CSS Grid`
+
+---
+
+### 4. 👁️ Dark Web Monitor (Interceptor)
+
+**Role:** Pre-Emptive Threat Detection.
+
+A specialized reconnaissance module designed to simulate the interception of threat actor communications on encrypted networks.
+
+* **Matrix Log Stream:** A scrolling, terminal-style feed that mimics packet sniffing logs, featuring realistic IP addresses and attack signatures (SQLi, XSS, Brute Force).
+* **CRT Filter Effect:** Custom CSS overlay simulating vintage monitor scanlines and chromatic aberration for high immersion.
+* **Threat Counters:** Aggregated metrics showing "Critical Threats" detected in the last session.
+
+`stack: Custom CSS Effects, React Hooks (useEffect)`
+
+---
+
+### 5. 🗄️ Evidence Locker (Digital Forensics Archive)
+
+**Role:** Long-Term Data Retention & Search.
+
+A robust database frontend allowing investigators to retrieve, filter, and review historical case data.
+
+* **Fuzzy Search:** Instant filtering capabilities allowing users to search cases by ID, Filename, or Threat Type.
+* **Risk Categorization:** Visual tagging system identifying "High Risk" vs. "Low Risk" artifacts at a glance.
+* **Chain of Custody:** Persistent access to original file metadata, upload timestamps, and AI confidence scores.
+
+`stack: Array Filtering, Flexbox Layouts, Dynamic Routing`
 ---
 
 ## 🏗️ System Architecture
