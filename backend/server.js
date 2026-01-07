@@ -45,9 +45,10 @@ app.set('io', io);
 
 // --- Middleware ---
 app.use(helmet());
-app.use(cors({ 
-  origin: ['http://localhost:5173', 'http://localhost:3000'], 
-  credentials: true 
+app.use(cors({
+  origin: '*', 
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());

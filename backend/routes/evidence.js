@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Minio = require('minio');
+const path = require('path');
 
 // Re-initialize MinIO
 const minioClient = new Minio.Client({
@@ -13,38 +14,56 @@ const minioClient = new Minio.Client({
 
 const BUCKET_NAME = 'forensics-evidence';
 
-// Route: /api/evidence/*
 router.get('/*', async (req, res) => {
+    const rawPath = req.params[0];
+    const cleanFilename = path.basename(rawPath);
+    const correctPath = `audio/${cleanFilename}`;
+
     try {
-        // 1. Capture the full path (e.g. "audio/CS-1234_alert.mp3")
-        const objectName = req.params[0]; 
+        // 1. Check File Stats
+        const stat = await minioClient.statObject(BUCKET_NAME, correctPath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
 
-        console.log(`🎧 Streaming Request: ${objectName}`);
+        // 2. Handle "Range Requests" (Critical for Audio)
+        if (range) {
+            // Parse "bytes=0-1024"
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
 
-        // 2. Get File Stats FIRST (Critical for Audio Player!)
-        let stat;
-        try {
-            stat = await minioClient.statObject(BUCKET_NAME, objectName);
-        } catch (err) {
-            console.error(`❌ File not found in MinIO: ${objectName}`);
-            return res.status(404).send("Audio file not found");
+            console.log(`✂️ Serving Chunk: ${start}-${end} (${chunksize} bytes)`);
+
+            // Send 206 Partial Content Header
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'audio/mpeg',
+                'Cache-Control': 'no-cache' // Development mode
+            });
+
+            // Stream ONLY the requested chunk
+            const stream = await minioClient.getPartialObject(BUCKET_NAME, correctPath, start, chunksize);
+            stream.pipe(res);
+
+        } else {
+            // 3. Fallback: No Range (Send Whole File)
+            console.log(`📦 Serving Whole File: ${fileSize} bytes`);
+            res.writeHead(200, {
+                'Content-Length': fileSize,
+                'Content-Type': 'audio/mpeg',
+                'Accept-Ranges': 'bytes' // Tell browser we support ranges next time
+            });
+            
+            const stream = await minioClient.getObject(BUCKET_NAME, correctPath);
+            stream.pipe(res);
         }
-
-        // 3. Set Headers (This fixes the 0:00 bug)
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Length', stat.size); // <--- The Missing Key!
-        res.setHeader('Accept-Ranges', 'bytes');    // Allows seeking/scrubbing
-
-        // 4. Stream the file
-        const dataStream = await minioClient.getObject(BUCKET_NAME, objectName);
-        dataStream.pipe(res);
 
     } catch (err) {
-        console.error("❌ Stream Error:", err);
-        // Only send error if headers haven't been sent yet
-        if (!res.headersSent) {
-            res.status(500).send("Error streaming evidence");
-        }
+        console.error(`❌ Stream Error for '${correctPath}':`, err.message);
+        if (!res.headersSent) res.status(404).send("Audio stream failed");
     }
 });
 
