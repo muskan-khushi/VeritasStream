@@ -22,3 +22,5 @@ RUN useradd -m worker
 USER worker
 
 CMD ["python", "worker.py"]
+
+#.
